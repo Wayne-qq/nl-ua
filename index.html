@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Словник UA-NL</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.1.0/firebase-app.js";
+        import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/10.1.0/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyDx-0ps9rwDG84BynNgau8RV196ETbvYlw",
+            authDomain: "nl-test-52a67.firebaseapp.com",
+            projectId: "nl-test-52a67",
+            storageBucket: "nl-test-52a67.appspot.com",
+            messagingSenderId: "740333223167",
+            appId: "1:740333223167:web:ff0e9d937942de87e2e0ca",
+            measurementId: "G-3MFK97XRLH"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        async function addWord() {
+    let ukWord = document.getElementById("ukrainianWord").value.trim();
+    let nlWord = document.getElementById("dutchWord").value.trim();
+
+    if (ukWord === "" || nlWord === "") {
+        alert("Заповніть обидва поля!");
+        return;
+    }
+
+    // Перевіряємо, чи слово вже існує
+    const querySnapshot = await getDocs(collection(db, "words"));
+    const words = querySnapshot.docs.map(doc => doc.data());
+    const wordExists = words.some(word => word.uk === ukWord && word.nl === nlWord);
+
+    if (wordExists) {
+        alert("Це слово вже існує в словнику!");
+        return;
+    }
+
+    // Додаємо нове слово
+    await addDoc(collection(db, "words"), { uk: ukWord, nl: nlWord });
+    document.getElementById("ukrainianWord").value = "";
+    document.getElementById("dutchWord").value = "";
+
+    // Оновлюємо таблицю
+    loadWords();
+}
+
+        async function loadWords() {
+    let wordList = document.getElementById("wordList");
+    wordList.innerHTML = ""; // Очищуємо таблицю перед завантаженням нових слів
+    const querySnapshot = await getDocs(collection(db, "words"));
+    querySnapshot.forEach((doc) => {
+        let word = doc.data();
+        let row = `
+            <tr>
+                <td>${word.uk}</td> <!-- Українське слово -->
+                <td>${word.nl}</td> <!-- Нідерландське слово -->
+                <td>
+                    <!-- Кнопка озвучування -->
+                    <button class="btn btn-primary btn-sm" onclick="speak('${word.nl}')">📢</button>
+                    <!-- Кнопка видалення -->
+                    <button class="btn btn-danger btn-sm ms-2" onclick="deleteWord('${doc.id}')">✖</button>
+                </td>
+            </tr>`;
+        wordList.innerHTML += row; // Додаємо рядок до таблиці
+    });
+}
+        async function deleteWord(id) {
+            await deleteDoc(doc(db, "words", id));
+            loadWords();
+        }
+
+        window.speak = function(text) {
+            let utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = "nl-NL";
+            speechSynthesis.speak(utterance);
+        };
+
+        async function translateWord() {
+            let ukWord = document.getElementById("ukrainianWord").value.trim();
+            if (!ukWord) {
+                alert("Введіть слово для перекладу!");
+                return;
+            }
+
+            let url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(ukWord)}&langpair=uk|nl`;
+
+            try {
+                let response = await fetch(url);
+                let data = await response.json();
+                document.getElementById("dutchWord").value = data.responseData.translatedText;
+            } catch (error) {
+                console.error("Помилка перекладу:", error);
+                alert("Помилка перекладу. Спробуйте ще раз!");
+            }
+        }
+
+        window.startSpeechRecognition = function() {
+            let recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+            recognition.lang = "uk-UA";
+            recognition.start();
+
+            recognition.onresult = function(event) {
+                let transcript = event.results[0][0].transcript;
+                document.getElementById("ukrainianWord").value = transcript;
+            };
+
+            recognition.onerror = function(event) {
+                alert("Помилка розпізнавання голосу: " + event.error);
+            };
+        };
+
+        window.addWord = addWord;
+        window.loadWords = loadWords;
+        window.deleteWord = deleteWord;
+        window.translateWord = translateWord;
+
+        // Гра
+        let words = [];
+        let correctAnswer = "";
+        let currentQuestion = {};
+
+        async function startQuiz() {
+            words = [];
+            const querySnapshot = await getDocs(collection(db, "words"));
+            querySnapshot.forEach((doc) => {
+                words.push(doc.data());
+            });
+
+            askQuestion();
+        }
+
+        function askQuestion() {
+            if (words.length === 0) {
+                alert("Немає слів у базі даних!");
+                return;
+            }
+
+            const randomWord = words[Math.floor(Math.random() * words.length)];
+            currentQuestion = randomWord;
+
+            const options = words
+                .filter(word => word.nl !== randomWord.nl)
+                .slice(0, 3)
+                .map(word => word.nl);
+            options.push(randomWord.nl);
+
+            // Перемішуємо варіанти
+            options.sort(() => Math.random() - 0.5);
+
+            document.getElementById("question").textContent = randomWord.uk;
+            document.getElementById("options").innerHTML = options.map((option, index) =>
+                `<button class="btn btn-outline-secondary mt-2 w-100" onclick="checkAnswer('${option}')">${option}</button>`
+            ).join("");
+        }
+
+        function checkAnswer(selectedAnswer) {
+            const isCorrect = selectedAnswer === currentQuestion.nl;
+
+            const buttons = document.querySelectorAll("#options button");
+            buttons.forEach(button => button.disabled = true);
+
+            if (isCorrect) {
+                document.getElementById("feedback").textContent = "Правильно!";
+                document.getElementById("feedback").style.color = "green";
+            } else {
+                document.getElementById("feedback").textContent = "Неправильно!";
+                document.getElementById("feedback").style.color = "red";
+            }
+
+            setTimeout(() => {
+                askQuestion();
+                document.getElementById("feedback").textContent = "";
+            }, 1500);
+        }
+
+        document.addEventListener("DOMContentLoaded", loadWords);
+
+        window.addBulkWords = async function () {
+    // Отримуємо текст з інпута
+    let bulkText = document.getElementById("bulkWordsInput").value.trim();
+    if (!bulkText) {
+        alert("Блок вводу порожній! Будь ласка, введіть слова.");
+        return;
+    }
+
+    // Розбиваємо текст на рядки
+    let lines = bulkText.split("\n");
+
+    // Масив для зберігання помилок
+    let errors = [];
+
+    // Обробляємо кожен рядок
+    for (let line of lines) {
+        // Видаляємо зайві пробіли
+        line = line.trim();
+
+        // Розбиваємо рядок на дві частини за символом "–"
+        let parts = line.split("–").map(part => part.trim());
+
+        if (parts.length !== 2 || !parts[0] || !parts[1]) {
+            errors.push(`Некоректний формат: "${line}"`);
+            continue; // Пропускаємо некоректний рядок
+        }
+
+        let nlWord = parts[0]; // Нідерландське слово
+        let ukWord = parts[1]; // Українське слово
+
+        try {
+            // Додаємо слово до бази даних
+            await addDoc(collection(db, "words"), {
+                uk: ukWord,
+                nl: nlWord
+            });
+        } catch (error) {
+            errors.push(`Помилка додавання слова "${line}": ${error.message}`);
+        }
+    }
+
+
+    // Очищуємо інпут
+    document.getElementById("bulkWordsInput").value = "";
+
+    // Перезавантажуємо таблицю
+    loadWords();
+};
+
+        
+
+        window.startQuiz = startQuiz;
+    window.checkAnswer = checkAnswer;
+
+
+
+        
+    </script>
+</head>
+<body class="bg-light">
+
+    <div class="container mt-5">
+        <h2 class="text-center mb-4">Словник Українсько-Нідерландський</h2>
+
+       
+        <!-- Форма для додавання слів -->
+        <div class="row g-2">
+            <div class="col-md-4 d-flex">
+                <input type="text" id="ukrainianWord" class="form-control" placeholder="Українське слово">
+                <button class="btn btn-secondary ms-2" onclick="startSpeechRecognition()">🎙</button>
+            </div>
+            <div class="col-md-3">
+                <button class="btn btn-warning w-100" onclick="translateWord()">Перекласти</button>
+            </div>
+            <div class="col-md-4">
+                <input type="text" id="dutchWord" class="form-control" placeholder="Нідерландське слово">
+            </div>
+            <div class="col-md-1">
+                <button class="btn btn-primary w-100" onclick="addWord()">Додати</button>
+            </div>
+        </div>
+
+        <!-- Таблиця слів -->
+        <table class="table table-bordered mt-4">
+            <thead class="table-dark">
+                <tr>
+                    <th>Українська</th>
+                    <th>Нідерландська</th>
+                    <th>Дії</th>
+                </tr>
+            </thead>
+            <tbody id="wordList">
+                <!-- Динамічно додаються слова -->
+            </tbody>
+        </table>
+
+         <!-- Кнопка "Грати" -->
+          
+         <div class="text-center">
+            <button class="btn btn-success" onclick="startQuiz()">Грати</button>
+        </div>
+
+        <div class="mt-4">
+            <!-- Питання -->
+            <div id="question" class="text-center h4"></div>
+
+            <!-- Відповіді -->
+            <div id="options" class="mt-3"></div>
+
+            <!-- Відгук після відповіді -->
+            <div id="feedback" class="text-center mt-3"></div>
+        </div>
+
+        <!-- Блок для вставки багатьох слів одночасно -->
+<div class="row g-2 mt-4">
+    <div class="col-md-9">
+        <textarea id="bulkWordsInput" class="form-control" rows="5" placeholder="Вставте пари слів у форматі 'Нідерландське слово – Українське слово'"></textarea>
+    </div>
+    <div class="col-md-3">
+        <button class="btn btn-success w-100" onclick="addBulkWords()">Додати всі слова</button>
+    </div>
+</div>
+
+    </div>
+
+</body>
+</html>
