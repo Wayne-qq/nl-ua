@@ -81,6 +81,23 @@
             speechSynthesis.speak(utterance);
         };
 
+
+        async function speak(text, lang = "nl-NL") {
+    const url = `https://texttospeech.googleapis.com/v1/text:synthesize?key=YOUR_API_KEY`;
+    const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            input: { text },
+            voice: { languageCode: lang, ssmlGender: "NEUTRAL" },
+            audioConfig: { audioEncoding: "MP3" }
+        })
+    });
+    const data = await response.json();
+    const audio = new Audio(`data:audio/mp3;base64,${data.audioContent}`);
+    audio.play();
+}
+
         async function translateWord() {
             let ukWord = document.getElementById("ukrainianWord").value.trim();
             if (!ukWord) {
